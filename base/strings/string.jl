@@ -106,6 +106,8 @@ end
 
 ## prevind and nextind ##
 
+# TODO: these need updating
+
 function prevind(s::String, i::Integer)
     j = Int(i)
     e = sizeof(s)
@@ -183,78 +185,43 @@ byte_string_classify(s::String) =
 isvalid(::Type{String}, s::Union{Vector{UInt8},String}) = byte_string_classify(s) != 0
 isvalid(s::String) = isvalid(String, s)
 
-## basic UTF-8 decoding & iteration ##
-
-is_surrogate_lead(c::Unsigned) = ((c & ~0x003ff) == 0xd800)
-is_surrogate_trail(c::Unsigned) = ((c & ~0x003ff) == 0xdc00)
-is_surrogate_codeunit(c::Unsigned) = ((c & ~0x007ff) == 0xd800)
-is_valid_continuation(c) = ((c & 0xc0) == 0x80)
-
-const utf8_offset = [
-    0x00000000, 0x00003080,
-    0x000e2080, 0x03c82080,
-    0xfa082080, 0x82082080,
-]
-
-const utf8_trailing = [
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
-    2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2, 3,3,3,3,3,3,3,3,4,4,4,4,5,5,5,5,
-]
-
 ## required core functionality ##
 
 function endof(s::String)
-    i = sizeof(s)
-    @inbounds while i > 0 && is_valid_continuation(codeunit(s, i))
+    i = n = sizeof(s)
+    b = codeunit(s, i)
+    b & 0xc0 == 0x80 || return i
+    lo = i - 3
+    while true
         i -= 1
-    end
-    i
+        lo ≤ i || return n
+        if b & 0xc0 != 0x80
+            
+
+
 end
 
 function length(s::String)
-    cnum = 0
-    @inbounds for i = 1:sizeof(s)
-        cnum += !is_valid_continuation(codeunit(s, i))
-    end
-    cnum
+    # TODO: anything faster than iteration?
 end
 
-@noinline function slow_utf8_next(s::String, b::UInt8, i::Int, l::Int)
-    @inbounds if is_valid_continuation(b)
-        throw(UnicodeError(UTF_ERR_INVALID_INDEX, i, codeunit(s, i)))
-    end
-    trailing = utf8_trailing[b + 1]
-    if l < i + trailing
-        return '\ufffd', i+1
-    end
-    c::UInt32 = 0
-    @inbounds for j = 1:(trailing + 1)
-        c <<= 6
-        c += codeunit(s, i)
-        i += 1
-    end
-    c -= utf8_offset[trailing + 1]
-    return Char(c), i
-end
-
-# This implementation relies on `next` returning a value past the end of the
-# String's underlying data, which is true for valid Strings
-done(s::String, state) = state > sizeof(s)
+done(s::String, i::Int) = i > sizeof(s)
 
 @inline function next(s::String, i::Int)
-    # function is split into this critical fast-path
-    # for pure ascii data, such as parsing numbers,
-    # and a longer function that can handle any utf8 data
     @boundscheck 1 ≤ i ≤ sizeof(s) || throw(BoundsError(s,i))
     @inbounds b = codeunit(s, i)
-    b < 0x80 && return Char(b), i+1
-    return slow_utf8_next(s, b, i, sizeof(s))
+    u = UInt32(b) << 24
+    # return already valid or invalid, otherwise decode more
+    (b < 0xbf) | (0xf8 ≤ b) ? (reinterpret(Char, u), i+1) :
+        next_continued(s::String, i::Int, u::UInt32)
+end
+
+@noinline function next_continued(s::String, i::Int, u::UInt32)
+    n = leading_ones(b) # 2 ≤ l1 ≤ 4
+    for j = 1:3
+        b = codeunit(s, i+j)
+
+
 end
 
 first_utf8_byte(c::Char) = (reinterpret(UInt32, c) >> 24) % UInt8
